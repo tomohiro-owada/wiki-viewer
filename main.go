@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var validName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -33,6 +35,15 @@ func main() {
 		log.Printf("single-wiki mode: serving %s", absDir)
 		setupSingleWiki(mux, absDir)
 	}
+
+	// MCP server on /mcp
+	mcpServer := setupMCPServer(absDir, multi)
+	mcpHandler := mcp.NewStreamableHTTPHandler(
+		func(r *http.Request) *mcp.Server { return mcpServer },
+		nil,
+	)
+	mux.Handle("/mcp", mcpHandler)
+	log.Printf("MCP endpoint: http://localhost:%d/mcp", *port)
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("listening on http://localhost%s", addr)

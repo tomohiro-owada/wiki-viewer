@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wiki-viewer": {
+      "type": "http",
+      "url": "http://localhost:52973/mcp"
+    }
+  }
+}
