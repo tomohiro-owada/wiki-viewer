@@ -47,7 +47,7 @@ func setupMCPServer(dir string, multi bool) *mcp.Server {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input PagesInput) (*mcp.CallToolResult, PagesOutput, error) {
 		if multi {
 			if input.Wiki == "" {
-				wikis := listWikis(dir)
+				wikis := listWikis(dir, "")
 				names := make([]string, len(wikis))
 				for i, w := range wikis {
 					names[i] = w.Name

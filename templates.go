@@ -142,7 +142,7 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!DOCTYPE html>
 </head>
 <body>
 <header>
-  {{if .WikiName}}<a href="/">Wikis</a>
+  {{if .WikiName}}<a href="{{.IndexURL}}">Wikis</a>
   <div class="breadcrumb"><a href="{{.HomeURL}}">{{.WikiName}}</a><span>/</span>{{.Title}}</div>
   {{else}}<a href="{{.HomeURL}}">Wiki</a>
   <h1>{{.Title}}</h1>
@@ -179,14 +179,14 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <a href="/">Wikis</a>
+  <a href="{{.BasePath}}/">Wikis</a>
 </header>
 <div class="wiki-list">
   <h1>Wikis</h1>
-  {{range .}}<a class="wiki-card" href="{{.URL}}">
+  {{range .Wikis}}<a class="wiki-card" href="{{.URL}}">
     <div class="name">{{.Display}}</div>
   </a>{{end}}
-  {{if not .}}<p>No wikis found. Add subdirectories containing .md files.</p>{{end}}
+  {{if not .Wikis}}<p>No wikis found. Add subdirectories containing .md files.</p>{{end}}
 </div>
 </body>
 </html>

@@ -18,6 +18,7 @@ var validName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 func main() {
 	dir := flag.String("dir", ".", "directory containing wiki .md files")
 	port := flag.Int("port", 8080, "HTTP port to listen on")
+	base := flag.String("base", "", "base path prefix (e.g. /docs) for reverse proxy setups")
 	flag.Parse()
 
 	absDir, err := filepath.Abs(*dir)
@@ -25,34 +26,51 @@ func main() {
 		log.Fatal(err)
 	}
 
-	mux := http.NewServeMux()
+	// Normalize base path: ensure leading slash, no trailing slash
+	basePath := strings.TrimRight(*base, "/")
+	if basePath != "" && !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+
+	// Inner mux handles routes without base prefix
+	innerMux := http.NewServeMux()
 	multi := detectMode(absDir)
 
 	if multi {
 		log.Printf("multi-wiki mode: serving wikis from subdirectories of %s", absDir)
-		setupMultiWiki(mux, absDir)
+		setupMultiWiki(innerMux, absDir, basePath)
 	} else {
 		log.Printf("single-wiki mode: serving %s", absDir)
-		setupSingleWiki(mux, absDir)
+		setupSingleWiki(innerMux, absDir, basePath)
 	}
 
-	// MCP server on /mcp
+	// MCP server
 	mcpServer := setupMCPServer(absDir, multi)
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpServer },
 		nil,
 	)
-	mux.Handle("/mcp", mcpHandler)
-	log.Printf("MCP endpoint: http://localhost:%d/mcp", *port)
+	innerMux.Handle("/mcp", mcpHandler)
+
+	// Wrap with StripPrefix if base path is set
+	outerMux := http.NewServeMux()
+	if basePath != "" {
+		outerMux.Handle(basePath+"/", http.StripPrefix(basePath, innerMux))
+		log.Printf("base path: %s", basePath)
+		log.Printf("MCP endpoint: http://localhost:%d%s/mcp", *port, basePath)
+	} else {
+		outerMux = innerMux
+		log.Printf("MCP endpoint: http://localhost:%d/mcp", *port)
+	}
 
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("listening on http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Printf("listening on http://localhost%s%s", addr, basePath)
+	log.Fatal(http.ListenAndServe(addr, outerMux))
 }
 
-func setupSingleWiki(mux *http.ServeMux, dir string) {
+func setupSingleWiki(mux *http.ServeMux, dir, basePath string) {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/wiki/Home", http.StatusFound)
+		http.Redirect(w, r, basePath+"/wiki/Home", http.StatusFound)
 	})
 
 	mux.HandleFunc("GET /wiki/{page}", func(w http.ResponseWriter, r *http.Request) {
@@ -62,9 +80,9 @@ func setupSingleWiki(mux *http.ServeMux, dir string) {
 			return
 		}
 
-		page, err := loadPage(dir, name, "")
+		page, err := loadPage(dir, name, "", basePath)
 		if err != nil {
-			render404(w, dir, name, "", "/wiki/Home")
+			render404(w, dir, name, "", basePath)
 			return
 		}
 
@@ -73,25 +91,22 @@ func setupSingleWiki(mux *http.ServeMux, dir string) {
 	})
 }
 
-func setupMultiWiki(mux *http.ServeMux, rootDir string) {
-	// Index page listing all wikis
+func setupMultiWiki(mux *http.ServeMux, rootDir, basePath string) {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		wikis := listWikis(rootDir)
+		wikis := listWikis(rootDir, basePath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		indexTmpl.Execute(w, wikis)
+		indexTmpl.Execute(w, IndexPage{BasePath: basePath, Wikis: wikis})
 	})
 
-	// Redirect /{wiki}/ to /{wiki}/wiki/Home
 	mux.HandleFunc("GET /{wiki}/{$}", func(w http.ResponseWriter, r *http.Request) {
 		wikiName := r.PathValue("wiki")
 		if !validName.MatchString(wikiName) {
 			http.NotFound(w, r)
 			return
 		}
-		http.Redirect(w, r, "/"+wikiName+"/wiki/Home", http.StatusFound)
+		http.Redirect(w, r, basePath+"/"+wikiName+"/wiki/Home", http.StatusFound)
 	})
 
-	// Serve wiki pages
 	mux.HandleFunc("GET /{wiki}/wiki/{page}", func(w http.ResponseWriter, r *http.Request) {
 		wikiName := r.PathValue("wiki")
 		pageName := r.PathValue("page")
@@ -102,9 +117,9 @@ func setupMultiWiki(mux *http.ServeMux, rootDir string) {
 		}
 
 		wikiDir := filepath.Join(rootDir, wikiName)
-		page, err := loadPage(wikiDir, pageName, wikiName)
+		page, err := loadPage(wikiDir, pageName, wikiName, basePath)
 		if err != nil {
-			render404(w, wikiDir, pageName, wikiName, "/"+wikiName+"/wiki/Home")
+			render404(w, wikiDir, pageName, wikiName, basePath)
 			return
 		}
 
@@ -113,12 +128,14 @@ func setupMultiWiki(mux *http.ServeMux, rootDir string) {
 	})
 }
 
-func render404(w http.ResponseWriter, dir, name, wikiName, homeURL string) {
+func render404(w http.ResponseWriter, dir, name, wikiName, basePath string) {
 	title := strings.ReplaceAll(name, "-", " ")
 
-	linkPrefix := ""
+	linkPrefix := basePath
+	homeURL := basePath + "/wiki/Home"
 	if wikiName != "" {
-		linkPrefix = "/" + wikiName
+		linkPrefix = basePath + "/" + wikiName
+		homeURL = basePath + "/" + wikiName + "/wiki/Home"
 	}
 
 	pages := listPages(dir)
@@ -145,6 +162,8 @@ func render404(w http.ResponseWriter, dir, name, wikiName, homeURL string) {
 		Body:     template.HTML(body),
 		WikiName: wikiName,
 		HomeURL:  homeURL,
+		BasePath: basePath,
+		IndexURL: basePath + "/",
 	}
 
 	if sidebar, err := loadSpecial(dir, "_Sidebar", linkPrefix); err == nil {

@@ -23,7 +23,9 @@ type Page struct {
 	HasSidebar bool
 	HasFooter  bool
 	WikiName   string // empty for single-wiki mode
-	HomeURL    string // "/wiki/Home" or "/{wiki}/wiki/Home"
+	HomeURL    string // "{base}/wiki/Home" or "{base}/{wiki}/wiki/Home"
+	BasePath   string // e.g. "/docs" or ""
+	IndexURL   string // "{base}/" for multi-wiki mode
 }
 
 // WikiEntry represents a wiki (subdirectory) in multi-wiki mode.
@@ -31,6 +33,12 @@ type WikiEntry struct {
 	Name    string
 	Display string
 	URL     string
+}
+
+// IndexPage holds data for the multi-wiki index page.
+type IndexPage struct {
+	BasePath string
+	Wikis    []WikiEntry
 }
 
 var (
@@ -42,7 +50,7 @@ var (
 )
 
 // expandWikiLinks converts [[Page Name]] to HTML links before markdown rendering.
-// prefix is "" for single-wiki mode or "/{wiki}" for multi-wiki mode.
+// prefix includes basePath, e.g. "/docs" or "/docs/my-wiki".
 func expandWikiLinks(src []byte, prefix string) []byte {
 	return wikiLinkRe.ReplaceAllFunc(src, func(match []byte) []byte {
 		inner := wikiLinkRe.FindSubmatch(match)[1]
@@ -72,18 +80,17 @@ func renderMarkdown(src []byte, linkPrefix string) (template.HTML, error) {
 }
 
 // loadPage reads a wiki page from disk and returns a fully populated Page.
-// wikiName is "" for single-wiki mode, or the subdirectory name for multi-wiki.
-func loadPage(dir, name, wikiName string) (*Page, error) {
+func loadPage(dir, name, wikiName, basePath string) (*Page, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, name+".md"))
 	if err != nil {
 		return nil, err
 	}
 
-	linkPrefix := ""
-	homeURL := "/wiki/Home"
+	linkPrefix := basePath
+	homeURL := basePath + "/wiki/Home"
 	if wikiName != "" {
-		linkPrefix = "/" + wikiName
-		homeURL = "/" + wikiName + "/wiki/Home"
+		linkPrefix = basePath + "/" + wikiName
+		homeURL = basePath + "/" + wikiName + "/wiki/Home"
 	}
 
 	body, err := renderMarkdown(raw, linkPrefix)
@@ -98,6 +105,8 @@ func loadPage(dir, name, wikiName string) (*Page, error) {
 		Body:     body,
 		WikiName: wikiName,
 		HomeURL:  homeURL,
+		BasePath: basePath,
+		IndexURL: basePath + "/",
 	}
 
 	if sidebar, err := loadSpecial(dir, "_Sidebar", linkPrefix); err == nil {
@@ -148,7 +157,7 @@ func listPages(dir string) []string {
 }
 
 // listWikis returns all subdirectories that contain at least one .md file.
-func listWikis(rootDir string) []WikiEntry {
+func listWikis(rootDir, basePath string) []WikiEntry {
 	entries, err := os.ReadDir(rootDir)
 	if err != nil {
 		return nil
@@ -162,7 +171,6 @@ func listWikis(rootDir string) []WikiEntry {
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 			continue
 		}
-		// Check if this directory has any .md files
 		subEntries, err := os.ReadDir(filepath.Join(rootDir, name))
 		if err != nil {
 			continue
@@ -178,7 +186,7 @@ func listWikis(rootDir string) []WikiEntry {
 			wikis = append(wikis, WikiEntry{
 				Name:    name,
 				Display: strings.ReplaceAll(name, "-", " "),
-				URL:     "/" + name + "/wiki/Home",
+				URL:     basePath + "/" + name + "/wiki/Home",
 			})
 		}
 	}
@@ -197,10 +205,9 @@ func detectMode(dir string) (isMulti bool) {
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			return false // has .md files directly -> single-wiki mode
+			return false
 		}
 	}
-	// No direct .md files; check for subdirectories with .md files
 	for _, e := range entries {
 		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
 			subEntries, err := os.ReadDir(filepath.Join(dir, e.Name()))
