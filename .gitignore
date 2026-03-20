@@ -1,0 +1,7 @@
+# Binary
+wiki-viewer
+*.exe
+
+# OS
+.DS_Store
+Thumbs.db
