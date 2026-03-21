@@ -48,7 +48,9 @@ func main() {
 	mcpServer := setupMCPServer(absDir, multi)
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return mcpServer },
-		nil,
+		&mcp.StreamableHTTPOptions{
+			DisableLocalhostProtection: true,
+		},
 	)
 	innerMux.Handle("/mcp", mcpHandler)
 
