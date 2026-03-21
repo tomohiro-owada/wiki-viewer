@@ -133,7 +133,7 @@ wiki-viewer は [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 }
 ```
 
-リバースプロキシ経由の場合:
+認証付きリバースプロキシ経由の場合は `headers` で認証情報を渡します:
 
 ```json
 {
@@ -142,7 +142,7 @@ wiki-viewer は [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
       "type": "http",
       "url": "https://example.com/wiki/mcp",
       "headers": {
-        "Cookie": "AWSELBAuthSessionCookie-0=${env:WIKI_COOKIE}"
+        "Authorization": "Bearer ${env:WIKI_TOKEN}"
       }
     }
   }
