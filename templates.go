@@ -44,6 +44,8 @@ header h1 { font-size: 18px; font-weight: 400; opacity: 0.85; }
   font-size: 14px;
   position: sticky;
   top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
 .sidebar ul { list-style: none; padding-left: 0; }
 .sidebar li { padding: 2px 0; }
